@@ -15,7 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 @Slf4j
-public class JavaCodeSandbox implements CodeSandbox{
+public class JavaCodeSandboxTemplate implements CodeSandbox{
     private static final String GLOBAL_CODE_DIR_NAME = "tmpCode";
 
     private static final String GLOBAL_JAVA_CLASS_NAME = "Main.java";
