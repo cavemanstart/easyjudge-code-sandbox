@@ -8,12 +8,16 @@ import com.stone.model.ExecuteMessage;
 import com.stone.model.JudgeInfo;
 import com.stone.utils.ProcessUtils;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.RedisTemplate;
 
+import javax.annotation.Resource;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+
 @Slf4j
 public class JavaCodeSandboxTemplate implements CodeSandbox{
     private static final String GLOBAL_CODE_DIR_NAME = "tmpCode";
@@ -21,13 +25,19 @@ public class JavaCodeSandboxTemplate implements CodeSandbox{
     private static final String GLOBAL_JAVA_CLASS_NAME = "Main.java";
 
     private static final long TIME_OUT = 5000L;
+    @Resource
+    private RedisTemplate<String, ExecuteCodeResponse> redisTemplate;
 
     @Override
     public ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest) {
         List<String> inputList = executeCodeRequest.getInputList();
         String code = executeCodeRequest.getCode();
         String language = executeCodeRequest.getLanguage();
-
+        //0. 先检查缓存
+        ExecuteCodeResponse executeCodeResponse = redisTemplate.opsForValue().get(code);
+        if(executeCodeResponse!=null){
+            return executeCodeResponse;
+        }
 //        1. 把用户的代码保存为文件
         File userCodeFile = saveCodeToFile(code);
 
@@ -46,6 +56,7 @@ public class JavaCodeSandboxTemplate implements CodeSandbox{
         if (!b) {
             log.error("deleteFile error, userCodeFilePath = {}", userCodeFile.getAbsolutePath());
         }
+        redisTemplate.opsForValue().set(code,outputResponse,5, TimeUnit.MINUTES);
         return outputResponse;
     }
 

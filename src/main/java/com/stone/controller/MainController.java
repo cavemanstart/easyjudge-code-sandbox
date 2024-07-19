@@ -3,14 +3,14 @@ package com.stone.controller;
 import com.stone.codesandbox.JavaDockerCodeSandbox;
 import com.stone.model.ExecuteCodeRequest;
 import com.stone.model.ExecuteCodeResponse;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 
 @RestController("/")
 public class MainController {
