@@ -3,7 +3,9 @@ server:
 spring:
   application:
     name: code-sandbox
+  # Redis 配置
   redis:
     database: 1
     host: 192.168.80.142
     port: 6379
+    timeout: 5000

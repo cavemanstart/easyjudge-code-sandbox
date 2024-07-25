@@ -11,23 +11,24 @@ import com.github.dockerjava.core.command.ExecStartResultCallback;
 import com.stone.model.ExecuteCodeRequest;
 import com.stone.model.ExecuteCodeResponse;
 import com.stone.model.ExecuteMessage;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StopWatch;
 
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 @Component
+@Slf4j
 public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate{
-    private static final long TIME_OUT = 5000L;
+    private static final long TIME_OUT = 20000L;
 
-    private static final Boolean FIRST_INIT = true;
+    private static Boolean FIRST_INIT = true;
 
     /**
      * 创建容器，把文件复制到容器内
@@ -44,6 +45,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate{
         // 拉取镜像
         String image = "openjdk:8-alpine";
         if (FIRST_INIT) {
+            FIRST_INIT = false;
             PullImageCmd pullImageCmd = dockerClient.pullImageCmd(image);
             PullImageResultCallback pullImageResultCallback = new PullImageResultCallback() {
                 @Override
@@ -60,18 +62,15 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate{
                 System.out.println("拉取镜像异常");
                 throw new RuntimeException(e);
             }
+            System.out.println("下载完成");
         }
-
-        System.out.println("下载完成");
-
         // 创建容器
-
         CreateContainerCmd containerCmd = dockerClient.createContainerCmd(image);
         HostConfig hostConfig = new HostConfig();
         hostConfig.withMemory(100 * 1000 * 1000L);
         hostConfig.withMemorySwap(0L);
         hostConfig.withCpuCount(1L);
-        hostConfig.withSecurityOpts(Arrays.asList("seccomp=安全管理配置字符串"));
+//        hostConfig.withSecurityOpts(Arrays.asList("seccomp=安全管理配置字符串"));
         hostConfig.setBinds(new Bind(userCodeParentPath, new Volume("/app")));
         CreateContainerResponse createContainerResponse = containerCmd
                 .withHostConfig(hostConfig)
@@ -92,6 +91,7 @@ public class JavaDockerCodeSandbox extends JavaCodeSandboxTemplate{
         // 执行命令并获取结果
         List<ExecuteMessage> executeMessageList = new ArrayList<>();
         for (String inputArgs : inputList) {
+            System.out.println("输入：" + inputArgs);
             StopWatch stopWatch = new StopWatch();
             String[] inputArgsArray = inputArgs.split(" ");
             String[] cmdArray = ArrayUtil.append(new String[]{"java", "-cp", "/app", "Main"}, inputArgsArray);

@@ -88,8 +88,8 @@ public class ProcessUtils {
             // 向控制台输入程序
             OutputStream outputStream = runProcess.getOutputStream();
             OutputStreamWriter outputStreamWriter = new OutputStreamWriter(outputStream);
-            String[] s = args.split(" ");
-            String join = StrUtil.join("\n", s) + "\n";
+            String[] argList = args.split(" ");
+            String join = StrUtil.join("\n", argList) + "\n";
             outputStreamWriter.write(join);
             // 相当于按了回车，执行输入的发送
             outputStreamWriter.flush();

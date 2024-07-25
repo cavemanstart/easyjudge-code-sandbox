@@ -2,13 +2,21 @@ package com.stone.codesandbox;
 
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONObject;
+import cn.hutool.json.JSONUtil;
+import cn.hutool.json.ObjectMapper;
+import cn.hutool.poi.excel.ExcelUtil;
 import com.stone.model.ExecuteCodeRequest;
 import com.stone.model.ExecuteCodeResponse;
 import com.stone.model.ExecuteMessage;
 import com.stone.model.JudgeInfo;
+import com.stone.model.enums.QuestionSubmitStatusEnum;
 import com.stone.utils.ProcessUtils;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.cache.CacheProperties;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.stereotype.Component;
+import org.springframework.util.StopWatch;
 
 import javax.annotation.Resource;
 import java.io.File;
@@ -19,6 +27,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
+@Component
 public class JavaCodeSandboxTemplate implements CodeSandbox{
     private static final String GLOBAL_CODE_DIR_NAME = "tmpCode";
 
@@ -26,17 +35,18 @@ public class JavaCodeSandboxTemplate implements CodeSandbox{
 
     private static final long TIME_OUT = 5000L;
     @Resource
-    private RedisTemplate<String, ExecuteCodeResponse> redisTemplate;
-
+    private RedisTemplate<String, String> redisTemplate;
     @Override
     public ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest) {
         List<String> inputList = executeCodeRequest.getInputList();
         String code = executeCodeRequest.getCode();
         String language = executeCodeRequest.getLanguage();
-        //0. 先检查缓存
-        ExecuteCodeResponse executeCodeResponse = redisTemplate.opsForValue().get(code);
-        if(executeCodeResponse!=null){
-            return executeCodeResponse;
+        //0.先检查缓存
+        String executeCodeResponseJson = redisTemplate.opsForValue().get(code);
+        if(executeCodeResponseJson!=null){
+            JSONObject entries = JSONUtil.parseObj(executeCodeResponseJson);
+            log.info("查找成功，直接返回redis中的数据");
+            return entries.toBean(ExecuteCodeResponse.class);
         }
 //        1. 把用户的代码保存为文件
         File userCodeFile = saveCodeToFile(code);
@@ -50,13 +60,13 @@ public class JavaCodeSandboxTemplate implements CodeSandbox{
 
 //        4. 收集整理输出结果
         ExecuteCodeResponse outputResponse = getOutputResponse(executeMessageList);
-
+        String jsonStr = JSONUtil.toJsonStr(outputResponse);
+        redisTemplate.opsForValue().set(code,jsonStr,5, TimeUnit.MINUTES);
 //        5. 文件清理
         boolean b = deleteFile(userCodeFile);
         if (!b) {
             log.error("deleteFile error, userCodeFilePath = {}", userCodeFile.getAbsolutePath());
         }
-        redisTemplate.opsForValue().set(code,outputResponse,5, TimeUnit.MINUTES);
         return outputResponse;
     }
 
@@ -112,9 +122,12 @@ public class JavaCodeSandboxTemplate implements CodeSandbox{
 
         List<ExecuteMessage> executeMessageList = new ArrayList<>();
         for (String inputArgs : inputList) {
+            log.info("inputArgs: "+ inputArgs);
 //            String runCmd = String.format("java -Xmx256m -Dfile.encoding=UTF-8 -cp %s Main %s", userCodeParentPath, inputArgs);
-            String runCmd = String.format("java -Xmx256m -Dfile.encoding=UTF-8 -cp %s Main %s", userCodeParentPath, inputArgs);
+            String runCmd = String.format("java -Xmx256m -Dfile.encoding=UTF-8 -cp %s Main", userCodeParentPath);
             try {
+                StopWatch stopWatch = new StopWatch();
+                stopWatch.start();
                 Process runProcess = Runtime.getRuntime().exec(runCmd);
                 // 超时控制
                 new Thread(() -> {
@@ -126,7 +139,10 @@ public class JavaCodeSandboxTemplate implements CodeSandbox{
                         throw new RuntimeException(e);
                     }
                 }).start();
-                ExecuteMessage executeMessage = ProcessUtils.runProcessAndGetMessage(runProcess, "运行");
+                ExecuteMessage executeMessage = ProcessUtils.runInteractProcessAndGetMessage(runProcess, inputArgs);
+                stopWatch.stop();
+                long lastTaskTimeMillis = stopWatch.getLastTaskTimeMillis();
+                executeMessage.setTime(lastTaskTimeMillis);
                 System.out.println(executeMessage);
                 executeMessageList.add(executeMessage);
             } catch (Exception e) {
@@ -151,7 +167,7 @@ public class JavaCodeSandboxTemplate implements CodeSandbox{
             if (StrUtil.isNotBlank(errorMessage)) {
                 executeCodeResponse.setMessage(errorMessage);
                 // 用户提交的代码执行中存在错误
-                executeCodeResponse.setStatus(3);
+                executeCodeResponse.setStatus(QuestionSubmitStatusEnum.FAILED.getText());
                 break;
             }
             outputList.add(executeMessage.getMessage());
@@ -162,13 +178,13 @@ public class JavaCodeSandboxTemplate implements CodeSandbox{
         }
         // 正常运行完成
         if (outputList.size() == executeMessageList.size()) {
-            executeCodeResponse.setStatus(1);
+            executeCodeResponse.setStatus(QuestionSubmitStatusEnum.SUCCEED.getText());
         }
         executeCodeResponse.setOutputList(outputList);
         JudgeInfo judgeInfo = new JudgeInfo();
         judgeInfo.setTime(maxTime);
         // 要借助第三方库来获取内存占用，非常麻烦，此处不做实现
-//        judgeInfo.setMemory();
+        judgeInfo.setMemory(128L);
         executeCodeResponse.setJudgeInfo(judgeInfo);
         return executeCodeResponse;
     }
@@ -199,7 +215,7 @@ public class JavaCodeSandboxTemplate implements CodeSandbox{
         executeCodeResponse.setOutputList(new ArrayList<>());
         executeCodeResponse.setMessage(e.getMessage());
         // 表示代码沙箱错误
-        executeCodeResponse.setStatus(2);
+        executeCodeResponse.setStatus(QuestionSubmitStatusEnum.FAILED.getText());
         executeCodeResponse.setJudgeInfo(new JudgeInfo());
         return executeCodeResponse;
     }
